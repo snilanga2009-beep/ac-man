@@ -3,7 +3,7 @@ const cors = require('cors');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const authRoutes = require('./routes/authRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
