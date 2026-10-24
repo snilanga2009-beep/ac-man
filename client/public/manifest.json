@@ -1,0 +1,66 @@
+{
+  "name": "AC-Pro | Air Conditioning Management & Technician SaaS",
+  "short_name": "AC-Pro",
+  "description": "Multi-Tenant Air Conditioning Field Service, Technician PWA, QR Tagging & Customer Billing SaaS",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Technician PWA App",
+      "short_name": "Tech App",
+      "description": "Open Technician Field App to view assigned jobs",
+      "url": "/technician/pwa",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Scan AC QR Code",
+      "short_name": "Scan QR",
+      "description": "Scan AC unit QR tag",
+      "url": "/technician/qr-scanner",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Book Service Job",
+      "short_name": "Book Job",
+      "description": "Schedule a new AC service job",
+      "url": "/company/jobs",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

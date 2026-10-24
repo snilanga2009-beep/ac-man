@@ -1,0 +1,14 @@
+{
+  "name": "ac-pro-saas",
+  "version": "1.0.0",
+  "description": "AC-Pro Multi-Tenant SaaS Platform for Air Conditioning Service Companies",
+  "scripts": {
+    "server": "cd server && npm start",
+    "client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "test:acceptance": "cd server && node tests/acceptanceTest.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
