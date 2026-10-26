@@ -80,6 +80,26 @@ function findTechnicianByIdentifier(rawIdentifier) {
   return null;
 }
 
+router.get('/company-branding', (req, res) => {
+  try {
+    const { company_id } = req.query;
+    let company = null;
+    if (company_id) {
+      company = db.prepare('SELECT id, name, logo, phone, email, address FROM companies WHERE id = ?').get(company_id);
+    }
+    if (!company) {
+      company = db.prepare("SELECT id, name, logo, phone, email, address FROM companies WHERE status = 'ACTIVE' ORDER BY id ASC LIMIT 1").get();
+    }
+    const allActive = db.prepare("SELECT id, name, logo FROM companies WHERE status = 'ACTIVE' LIMIT 10").all();
+    res.json({
+      company: company || { name: 'AC-Pro Air Conditioning', logo: null },
+      companies: allActive
+    });
+  } catch (err) {
+    res.json({ company: { name: 'AC-Pro Air Conditioning', logo: null }, companies: [] });
+  }
+});
+
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
 

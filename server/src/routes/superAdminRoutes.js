@@ -86,8 +86,15 @@ router.post('/companies', (req, res) => {
     custom_technician_price = null
   } = req.body;
 
-  if (!name) {
+  if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Company name is required' });
+  }
+
+  // Prevent duplicate company name (case-insensitive check)
+  const trimmedName = name.trim();
+  const existingCompany = db.prepare('SELECT id, name FROM companies WHERE LOWER(TRIM(name)) = LOWER(?)').get(trimmedName);
+  if (existingCompany) {
+    return res.status(400).json({ error: `A company with the name "${trimmedName}" already exists. Please choose a unique name.` });
   }
 
   const stmt = db.prepare(`
@@ -168,6 +175,15 @@ router.put('/companies/:id', (req, res) => {
     custom_technician_price
   } = req.body;
 
+  // Prevent duplicate company name on rename
+  if (name && name.trim()) {
+    const trimmedName = name.trim();
+    const existingCompany = db.prepare('SELECT id FROM companies WHERE LOWER(TRIM(name)) = LOWER(?) AND id != ?').get(trimmedName, req.params.id);
+    if (existingCompany) {
+      return res.status(400).json({ error: `Another company with the name "${trimmedName}" already exists.` });
+    }
+  }
+
   const stmt = db.prepare(`
     UPDATE companies
     SET name = COALESCE(?, name),
@@ -239,6 +255,94 @@ router.patch('/companies/:id/status', (req, res) => {
   });
 
   res.json(updated);
+});
+
+// Delete company & cascaded resources
+router.delete('/companies/:id', (req, res) => {
+  const companyId = req.params.id;
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
+  if (!company) {
+    return res.status(404).json({ error: 'Company not found' });
+  }
+
+  try {
+    const deleteTx = db.transaction(() => {
+      // Cascaded deletion of all records associated with this company
+      db.prepare('DELETE FROM communication_logs WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM service_reminders WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM service_packages WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM payments WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM invoices WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM quotations WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM service_jobs WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM ac_units WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM customers WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM freelance_technicians WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM technician_earnings_ledger WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM technician_payouts WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM company_subscriptions WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM users WHERE company_id = ?').run(companyId);
+      db.prepare('DELETE FROM companies WHERE id = ?').run(companyId);
+    });
+
+    deleteTx();
+
+    logAudit({
+      company_id: null,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      user_role: req.user.role,
+      action: 'COMPANY_DELETED',
+      details: { company_id: companyId, name: company.name },
+      ip_address: req.ip,
+      record_id: companyId
+    });
+
+    res.json({ success: true, message: `Company "${company.name}" and all associated data have been deleted.` });
+  } catch (err) {
+    console.error('Error deleting company:', err);
+    res.status(500).json({ error: 'Failed to delete company: ' + err.message });
+  }
+});
+
+// Super Admin Change Password
+router.post('/change-password', (req, res) => {
+  const { current_password, new_password, confirm_password } = req.body;
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'Current password and new password are required' });
+  }
+  if (new_password.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+  }
+  if (confirm_password && new_password !== confirm_password) {
+    return res.status(400).json({ error: 'New password and confirmation do not match' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) {
+    return res.status(404).json({ error: 'Super Admin user record not found' });
+  }
+
+  const isMatch = bcrypt.compareSync(current_password, user.password_hash);
+  if (!isMatch) {
+    return res.status(400).json({ error: 'Incorrect current password' });
+  }
+
+  const newHash = bcrypt.hashSync(new_password, 10);
+  db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, user.id);
+
+  logAudit({
+    company_id: null,
+    user_id: user.id,
+    user_name: user.name,
+    user_role: user.role,
+    action: 'SUPER_ADMIN_PASSWORD_CHANGED',
+    details: { user_id: user.id, username: user.username },
+    ip_address: req.ip,
+    record_id: user.id
+  });
+
+  res.json({ success: true, message: 'Super admin password updated successfully' });
 });
 
 // 3. Company Admin Management

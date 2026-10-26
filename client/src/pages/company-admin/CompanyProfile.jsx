@@ -26,11 +26,12 @@ import {
   Check,
   RefreshCw,
   Zap,
-  Lock
+  Lock,
+  Mail
 } from 'lucide-react';
 
 export default function CompanyProfile() {
-  const [activeTab, setActiveTab] = useState('PROFILE'); // 'PROFILE' | 'CLOUDINARY' | 'SMS' | 'WHATSAPP'
+  const [activeTab, setActiveTab] = useState('PROFILE'); // 'PROFILE' | 'CLOUDINARY' | 'SMS' | 'WHATSAPP' | 'EMAIL'
 
   const [form, setForm] = useState({
     name: '',
@@ -60,7 +61,16 @@ export default function CompanyProfile() {
     cloudinary_api_key: '',
     cloudinary_api_secret: '',
     cloudinary_upload_preset: '',
-    cloudinary_folder: 'ac-pro/service-jobs'
+    cloudinary_folder: 'ac-pro/service-jobs',
+    // SMTP Email Gateway Config
+    smtp_enabled: true,
+    smtp_host: 'smtp.gmail.com',
+    smtp_port: 587,
+    smtp_secure: 'TLS',
+    smtp_user: '',
+    smtp_pass: '',
+    smtp_from_email: '',
+    smtp_from_name: ''
   });
 
   const [systemWhatsApp, setSystemWhatsApp] = useState(null);
@@ -84,6 +94,12 @@ export default function CompanyProfile() {
   const [testWaPhone, setTestWaPhone] = useState('');
   const [testingWa, setTestingWa] = useState(false);
   const [testWaResult, setTestWaResult] = useState(null);
+
+  // Test states for SMTP Email
+  const [testEmailRecipient, setTestEmailRecipient] = useState('');
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [testSmtpResult, setTestSmtpResult] = useState(null);
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -125,10 +141,20 @@ export default function CompanyProfile() {
             cloudinary_api_key: comp.cloudinary_api_key || '',
             cloudinary_api_secret: comp.cloudinary_api_secret || '',
             cloudinary_upload_preset: comp.cloudinary_upload_preset || '',
-            cloudinary_folder: comp.cloudinary_folder || 'ac-pro/service-jobs'
+            cloudinary_folder: comp.cloudinary_folder || 'ac-pro/service-jobs',
+            // SMTP Email
+            smtp_enabled: comp.smtp_enabled !== 0,
+            smtp_host: comp.smtp_host || 'smtp.gmail.com',
+            smtp_port: comp.smtp_port || 587,
+            smtp_secure: comp.smtp_secure || 'TLS',
+            smtp_user: comp.smtp_user || comp.email || '',
+            smtp_pass: comp.smtp_pass ? '••••••••' : '',
+            smtp_from_email: comp.smtp_from_email || comp.email || '',
+            smtp_from_name: comp.smtp_from_name || comp.name || ''
           });
           setTestSmsPhone(comp.phone || '0771234567');
           setTestWaPhone(comp.whatsapp || comp.phone || '0771234567');
+          setTestEmailRecipient(comp.email || '');
         }
         if (res.data.systemWhatsApp) setSystemWhatsApp(res.data.systemWhatsApp);
         if (res.data.systemSms) setSystemSms(res.data.systemSms);
@@ -218,6 +244,34 @@ export default function CompanyProfile() {
         error: err.response?.data?.error || 'Failed to dispatch test WhatsApp message'
       });
       setTestingWa(false);
+    }
+  };
+
+  const handleTestSmtp = async () => {
+    if (!form.smtp_host || !form.smtp_user) {
+      alert('Please fill in SMTP Host and User/Email before testing.');
+      return;
+    }
+    setTestingSmtp(true);
+    setTestSmtpResult(null);
+    try {
+      const res = await axios.post('/api/company/email/test-smtp', {
+        host: form.smtp_host,
+        port: form.smtp_port,
+        secure: form.smtp_secure,
+        user: form.smtp_user,
+        pass: form.smtp_pass,
+        from_email: form.smtp_from_email,
+        test_recipient: testEmailRecipient || form.smtp_from_email || form.email
+      });
+      setTestSmtpResult(res.data);
+    } catch (err) {
+      setTestSmtpResult({
+        success: false,
+        error: err.response?.data?.error || 'Failed to verify SMTP server connection'
+      });
+    } finally {
+      setTestingSmtp(false);
     }
   };
 
@@ -345,6 +399,25 @@ export default function CompanyProfile() {
             form.whatsapp_enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
           }`}>
             {form.whatsapp_enabled ? 'On' : 'Off'}
+          </span>
+        </button>
+
+        {/* Tab 5: Email / SMTP Gateway */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('EMAIL')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'EMAIL'
+              ? 'bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-md'
+              : 'text-cyan-900 hover:text-cyan-950 bg-cyan-50/70'
+          }`}
+        >
+          <Mail className={`w-4 h-4 ${activeTab === 'EMAIL' ? 'text-white' : 'text-cyan-600'}`} />
+          <span>Email / SMTP</span>
+          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase ${
+            form.smtp_enabled ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-200 text-slate-500'
+          }`}>
+            {form.smtp_enabled ? 'On' : 'Off'}
           </span>
         </button>
       </div>
@@ -1152,7 +1225,230 @@ export default function CompanyProfile() {
           </div>
         )}
 
-        {/* Global Save Action Footer */}
+        {/* ======================================================== */}
+        {/* TAB 5: EMAIL / SMTP GATEWAY (GMAIL OR CUSTOM DOMAIN)     */}
+        {/* ======================================================== */}
+        {activeTab === 'EMAIL' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-6 animate-in fade-in">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-gradient-to-tr from-cyan-500 to-sky-600 text-white rounded-2xl shadow-sm">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-extrabold text-slate-800">Company Email & SMTP Configuration</h2>
+                  <p className="text-[11px] text-slate-400">
+                    Send branded customer invoices and automated service reminders via Gmail or your custom domain email.
+                  </p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.smtp_enabled}
+                  onChange={(e) => setForm({ ...form, smtp_enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                <span className="ml-2.5 text-xs font-bold text-slate-700">
+                  {form.smtp_enabled ? 'Active' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+
+            {/* Quick 1-Click Presets */}
+            <div className="p-3.5 bg-gradient-to-r from-cyan-50 to-sky-50 rounded-2xl border border-cyan-200/70 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-600" />
+                <span className="text-xs font-bold text-cyan-950">Quick SMTP Presets:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({
+                      ...form,
+                      smtp_host: 'smtp.gmail.com',
+                      smtp_port: 587,
+                      smtp_secure: 'TLS'
+                    });
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-cyan-100 text-cyan-800 rounded-xl text-xs font-bold border border-cyan-300 shadow-2xs transition-all cursor-pointer"
+                >
+                  ✉️ Gmail (Port 587 TLS)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({
+                      ...form,
+                      smtp_host: 'mail.yourdomain.com',
+                      smtp_port: 465,
+                      smtp_secure: 'SSL'
+                    });
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-sky-100 text-sky-800 rounded-xl text-xs font-bold border border-sky-300 shadow-2xs transition-all cursor-pointer"
+                >
+                  🌐 Custom Domain (Port 465 SSL)
+                </button>
+              </div>
+            </div>
+
+            {/* Form Fields */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    SMTP Host / Server Address *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={form.smtp_host}
+                    onChange={(e) => setForm({ ...form, smtp_host: e.target.value })}
+                    placeholder="e.g. smtp.gmail.com or mail.webcorexa.com"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono bg-white outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Port & Security *
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      value={form.smtp_port}
+                      onChange={(e) => setForm({ ...form, smtp_port: Number(e.target.value) })}
+                      placeholder="587"
+                      className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded-xl font-mono bg-white outline-none"
+                    />
+                    <select
+                      value={form.smtp_secure}
+                      onChange={(e) => setForm({ ...form, smtp_secure: e.target.value })}
+                      className="w-full px-2 py-2 text-xs border border-slate-300 rounded-xl font-bold bg-white outline-none"
+                    >
+                      <option value="TLS">TLS (587)</option>
+                      <option value="SSL">SSL (465)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    SMTP Username / Email *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={form.smtp_user}
+                    onChange={(e) => setForm({ ...form, smtp_user: e.target.value })}
+                    placeholder="e.g. yourname@gmail.com or billing@coolair.lk"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono bg-white outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Password / App Password *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSmtpPass ? 'text' : 'password'}
+                      value={form.smtp_pass}
+                      onChange={(e) => setForm({ ...form, smtp_pass: e.target.value })}
+                      placeholder="Gmail 16-char App Password or mailbox password"
+                      className="w-full pl-3 pr-10 py-2 text-xs border border-slate-300 rounded-xl font-mono bg-white outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSmtpPass(!showSmtpPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showSmtpPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Sender Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.smtp_from_name}
+                    onChange={(e) => setForm({ ...form, smtp_from_name: e.target.value })}
+                    placeholder="e.g. CoolAir HVAC Solutions"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Sender From Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={form.smtp_from_email}
+                    onChange={(e) => setForm({ ...form, smtp_from_email: e.target.value })}
+                    placeholder="e.g. billing@coolair.lk"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono bg-white outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Test SMTP Connection Box */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-cyan-600" /> Test SMTP Connection & Send Test Email
+                </h4>
+                <span className="text-[10px] text-slate-400 font-medium">Verify credentials before live invoice sending</span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="email"
+                  value={testEmailRecipient}
+                  onChange={(e) => setTestEmailRecipient(e.target.value)}
+                  placeholder="Enter recipient test email (e.g. test@example.com)"
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-medium outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={testingSmtp}
+                  onClick={handleTestSmtp}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-700 hover:to-sky-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 shadow-sm shrink-0 flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingSmtp ? 'animate-spin' : ''}`} />
+                  <span>{testingSmtp ? 'Connecting & Verifying...' : 'TEST SMTP CONNECTION'}</span>
+                </button>
+              </div>
+
+              {testSmtpResult && (
+                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                  testSmtpResult.success ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-rose-50 border-rose-300 text-rose-900'
+                }`}>
+                  {testSmtpResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                  <div>
+                    <p>{testSmtpResult.message || testSmtpResult.error}</p>
+                    {testSmtpResult.email_sent && (
+                      <p className="text-[11px] font-normal text-emerald-700 mt-0.5">
+                        ✓ Verification email was delivered to <strong>{testSmtpResult.recipient}</strong>.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200">
           <div className="text-xs text-slate-500 font-medium">
             Changes will take effect immediately across all technician jobs, invoices, and messaging workflows.

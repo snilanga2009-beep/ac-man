@@ -17,7 +17,8 @@ import {
   RotateCw,
   Layers,
   ArrowRight,
-  CreditCard
+  CreditCard,
+  Trash2
 } from 'lucide-react';
 
 export default function CompaniesList() {
@@ -29,6 +30,7 @@ export default function CompaniesList() {
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [subscribing, setSubscribing] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [createError, setCreateError] = useState('');
 
   // Subscription Assignment State
   const [subForm, setSubForm] = useState({
@@ -97,6 +99,7 @@ export default function CompaniesList() {
 
   const handleCreateCompany = async (e) => {
     e.preventDefault();
+    setCreateError('');
     try {
       await axios.post('/api/super-admin/companies', companyForm);
       setIsCreateModalOpen(false);
@@ -109,7 +112,21 @@ export default function CompaniesList() {
       setToastMessage('Company created successfully with active Starter Cloud subscription!');
       setTimeout(() => setToastMessage(''), 5000);
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to create company');
+      setCreateError(err.response?.data?.error || 'Failed to create company');
+    }
+  };
+
+  const handleDeleteCompany = async (comp) => {
+    if (!window.confirm(`Are you SURE you want to permanently delete company "${comp.name}"?\n\nWARNING: This will permanently erase all associated technicians, customers, AC units, service jobs, quotations, and invoices.`)) {
+      return;
+    }
+    try {
+      await axios.delete(`/api/super-admin/companies/${comp.id}`);
+      fetchCompanies();
+      setToastMessage(`Company "${comp.name}" and all associated data deleted successfully.`);
+      setTimeout(() => setToastMessage(''), 5000);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete company');
     }
   };
 
@@ -398,6 +415,14 @@ export default function CompaniesList() {
                   >
                     Details
                   </Link>
+
+                  <button
+                    onClick={() => handleDeleteCompany(comp)}
+                    title="Permanently Delete Company"
+                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -692,6 +717,13 @@ export default function CompaniesList() {
             </div>
 
             <form onSubmit={handleCreateCompany} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {createError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{createError}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Company Name *</label>

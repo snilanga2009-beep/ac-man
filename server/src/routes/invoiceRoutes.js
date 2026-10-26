@@ -6,6 +6,7 @@ const { renderTemplate } = require('../services/templateService');
 const { sendSms } = require('../services/textlkSmsService');
 const { sendWhatsApp } = require('../services/whatsappService');
 const { syncJobEarningsLedger } = require('../services/freelanceService');
+const { sendEmail, generateInvoiceEmailHtml } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -591,6 +592,106 @@ router.post('/:id/payment', async (req, res) => {
     amount_paid: newTotalPaid,
     status: newStatus
   });
+});
+
+// 5. Send Invoice via Email (Gmail or Custom Domain SMTP)
+router.post('/:id/send-email', async (req, res) => {
+  const companyId = req.company_id;
+  const invoiceId = req.params.id;
+  const { recipient_email, custom_subject, custom_message } = req.body;
+
+  try {
+    const invoice = db.prepare(`
+      SELECT inv.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone, c.address as customer_address,
+             comp.name as company_name, comp.currency, comp.phone as company_phone, comp.email as company_email,
+             comp.address as company_address, comp.smtp_from_email,
+             j.job_number, j.service_type,
+             u.brand as ac_brand, u.model_number as ac_model, u.capacity_btu, u.location_in_building
+      FROM invoices inv
+      JOIN customers c ON inv.customer_id = c.id
+      JOIN companies comp ON inv.company_id = comp.id
+      LEFT JOIN service_jobs j ON inv.service_job_id = j.id
+      LEFT JOIN ac_units u ON j.ac_unit_id = u.id
+      WHERE inv.id = ? AND inv.company_id = ?
+    `).get(invoiceId, companyId);
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const toEmail = (recipient_email && recipient_email.trim()) || invoice.customer_email;
+    if (!toEmail || !toEmail.includes('@')) {
+      return res.status(400).json({ error: 'A valid recipient email address is required to send the invoice.' });
+    }
+
+    // Parse items
+    let parsedItems = [];
+    if (invoice.items) {
+      try {
+        parsedItems = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
+      } catch (_) {
+        parsedItems = [{ description: invoice.service_type || 'AC Service', qty: 1, unit_price: invoice.total, total: invoice.total }];
+      }
+    }
+
+    const subject = custom_subject || `Invoice #${invoice.invoice_number} from ${invoice.company_name}`;
+    const html = generateInvoiceEmailHtml({
+      invoice,
+      company: {
+        name: invoice.company_name,
+        phone: invoice.company_phone,
+        email: invoice.company_email,
+        address: invoice.company_address,
+        currency: invoice.currency
+      },
+      customer: {
+        name: invoice.customer_name,
+        phone: invoice.customer_phone,
+        email: toEmail,
+        address: invoice.customer_address
+      },
+      job: invoice.job_number ? {
+        job_number: invoice.job_number,
+        ac_brand: invoice.ac_brand,
+        ac_model: invoice.ac_model,
+        location_in_building: invoice.location_in_building
+      } : null,
+      items: parsedItems
+    });
+
+    const emailResult = await sendEmail({
+      company_id: companyId,
+      customer_id: invoice.customer_id,
+      to: toEmail,
+      subject,
+      html,
+      text: `Dear ${invoice.customer_name}, please find attached your Invoice #${invoice.invoice_number} for Rs. ${Number(invoice.total).toLocaleString()} from ${invoice.company_name}. Balance Due: Rs. ${Number(invoice.total - (invoice.amount_paid || 0)).toLocaleString()}.`,
+      invoice_id: invoice.id,
+      message_type: 'INVOICE_EMAIL',
+      sent_by_user_id: req.user?.id,
+      sent_by_role: req.user?.role
+    });
+
+    logAudit({
+      company_id: companyId,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      user_role: req.user.role,
+      action: 'INVOICE_EMAIL_SENT',
+      details: { invoice_id: invoice.id, invoice_number: invoice.invoice_number, recipient_email: toEmail, result: emailResult },
+      ip_address: req.ip,
+      record_id: invoice.id
+    });
+
+    res.json({
+      success: true,
+      message: `Invoice #${invoice.invoice_number} emailed successfully to ${toEmail}!`,
+      delivery: emailResult
+    });
+  } catch (err) {
+    console.error('Error sending invoice email:', err);
+    res.status(500).json({ error: 'Failed to send invoice email: ' + err.message });
+  }
 });
 
 module.exports = router;

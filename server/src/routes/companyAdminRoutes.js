@@ -17,6 +17,7 @@ const { sendWhatsApp } = require('../services/whatsappService');
 const { renderTemplate } = require('../services/templateService');
 const { testCloudinaryConnection } = require('../services/cloudinaryService');
 const { ensureJobAssignmentAndLedger } = require('../services/freelanceService');
+const { testSmtpConnection, sendEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -803,7 +804,16 @@ router.put('/profile', (req, res) => {
     cloudinary_api_key,
     cloudinary_api_secret,
     cloudinary_upload_preset,
-    cloudinary_folder
+    cloudinary_folder,
+    // SMTP Email Settings
+    smtp_enabled,
+    smtp_host,
+    smtp_port,
+    smtp_secure,
+    smtp_user,
+    smtp_pass,
+    smtp_from_email,
+    smtp_from_name
   } = req.body;
 
   db.prepare(`
@@ -834,6 +844,14 @@ router.put('/profile', (req, res) => {
         cloudinary_api_secret = COALESCE(?, cloudinary_api_secret),
         cloudinary_upload_preset = COALESCE(?, cloudinary_upload_preset),
         cloudinary_folder = COALESCE(?, cloudinary_folder),
+        smtp_enabled = COALESCE(?, smtp_enabled),
+        smtp_host = COALESCE(?, smtp_host),
+        smtp_port = COALESCE(?, smtp_port),
+        smtp_secure = COALESCE(?, smtp_secure),
+        smtp_user = COALESCE(?, smtp_user),
+        smtp_pass = COALESCE(?, smtp_pass),
+        smtp_from_email = COALESCE(?, smtp_from_email),
+        smtp_from_name = COALESCE(?, smtp_from_name),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
@@ -863,6 +881,14 @@ router.put('/profile', (req, res) => {
     cloudinary_api_secret !== undefined ? cloudinary_api_secret : null,
     cloudinary_upload_preset !== undefined ? cloudinary_upload_preset : null,
     cloudinary_folder !== undefined ? cloudinary_folder : null,
+    smtp_enabled !== undefined ? (smtp_enabled ? 1 : 0) : null,
+    smtp_host !== undefined ? smtp_host : null,
+    smtp_port !== undefined ? (smtp_port ? Number(smtp_port) : null) : null,
+    smtp_secure !== undefined ? smtp_secure : null,
+    smtp_user !== undefined ? smtp_user : null,
+    smtp_pass !== undefined && smtp_pass !== '' && !smtp_pass.includes('••') ? smtp_pass : null,
+    smtp_from_email !== undefined ? smtp_from_email : null,
+    smtp_from_name !== undefined ? smtp_from_name : null,
     companyId
   );
 
@@ -880,6 +906,55 @@ router.put('/profile', (req, res) => {
   });
 
   res.json(updated);
+});
+
+// Test SMTP Email Gateway Connection
+router.post('/email/test-smtp', async (req, res) => {
+  const companyId = req.company_id;
+  const { host, port, secure, user, pass, from_email, test_recipient } = req.body;
+
+  const currentCompany = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
+
+  const smtpConfig = {
+    host: host || currentCompany?.smtp_host,
+    port: Number(port) || Number(currentCompany?.smtp_port) || 587,
+    secure: secure === 'SSL' || Number(port) === 465 || currentCompany?.smtp_secure === 'SSL',
+    user: user || currentCompany?.smtp_user,
+    pass: (pass && !pass.includes('••')) ? pass : currentCompany?.smtp_pass
+  };
+
+  if (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass) {
+    return res.status(400).json({ error: 'SMTP Host, User/Email, and Password/App Password are required to test connection.' });
+  }
+
+  const result = await testSmtpConnection(smtpConfig);
+
+  if (result.success && test_recipient) {
+    try {
+      const fromAddr = from_email || smtpConfig.user;
+      await sendEmail({
+        company_id: companyId,
+        to: test_recipient,
+        subject: `[Test Email] AC-Pro SMTP Connection Test (${currentCompany?.name || 'AC-Pro'})`,
+        html: `<div style="font-family:sans-serif;padding:20px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;">
+          <h2 style="color:#16a34a;margin-top:0;">✓ SMTP Connected Successfully!</h2>
+          <p>This is a verification test email sent from <strong>${currentCompany?.name || 'AC-Pro'}</strong> via <code>${smtpConfig.host}:${smtpConfig.port}</code>.</p>
+          <p style="font-size:12px;color:#6b7280;">Sent at: ${new Date().toISOString()}</p>
+        </div>`,
+        text: `SMTP Connected Successfully! Test email sent from ${currentCompany?.name || 'AC-Pro'}.`,
+        message_type: 'TEST_EMAIL',
+        sent_by_user_id: req.user.id,
+        sent_by_role: req.user.role
+      });
+      result.email_sent = true;
+      result.recipient = test_recipient;
+    } catch (sendErr) {
+      result.email_sent = false;
+      result.send_error = sendErr.message;
+    }
+  }
+
+  res.json(result);
 });
 
 // 2.0 Test Cloudinary Connection for Company
@@ -999,7 +1074,7 @@ router.get('/billing', (req, res) => {
 router.get('/technicians', (req, res) => {
   const companyId = req.company_id;
   const technicians = db.prepare(`
-    SELECT id, name, email, mobile, username, status, profile_photo, created_at
+    SELECT id, name, email, mobile, username, status, profile_photo, working_area, created_at
     FROM users
     WHERE company_id = ? AND role = 'TECHNICIAN'
     ORDER BY created_at DESC
@@ -1022,48 +1097,74 @@ router.post('/technicians', async (req, res) => {
     profile_photo,
     username,
     password,
+    working_area = 'Colombo',
     status = 'ACTIVE',
     send_pwa_link = false,
     notification_channel = 'BOTH',
     app_url
   } = req.body;
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, email, and password are required' });
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Technician name is required' });
+  }
+  if (!mobile || !mobile.trim()) {
+    return res.status(400).json({ error: 'Mobile phone number is strictly required' });
+  }
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Email address is required' });
+  }
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  // Check unique username / email
-  const existing = db.prepare('SELECT id FROM users WHERE email = ? OR username = ?').get(email, username || email);
-  if (existing) {
-    return res.status(400).json({ error: 'A user with this email or username already exists' });
+  const cleanMobile = mobile.trim();
+  const cleanEmail = email.trim();
+  const cleanUsername = (username && username.trim()) || cleanEmail;
+
+  // Strict Phone Uniqueness Check across all system users and freelance technicians
+  const existingPhoneUser = db.prepare('SELECT id, name FROM users WHERE mobile = ? OR mobile = ?').get(cleanMobile, cleanMobile.replace(/^\+94/, '0'));
+  if (existingPhoneUser) {
+    return res.status(400).json({ error: `Mobile number "${cleanMobile}" is already registered to another technician/user (${existingPhoneUser.name}). Duplicate phones are not permitted.` });
+  }
+
+  const existingPhoneFt = db.prepare('SELECT id, full_name FROM freelance_technicians WHERE phone = ? OR phone = ?').get(cleanMobile, cleanMobile.replace(/^\+94/, '0'));
+  if (existingPhoneFt) {
+    return res.status(400).json({ error: `Mobile number "${cleanMobile}" is already assigned to freelance technician (${existingPhoneFt.full_name}).` });
+  }
+
+  // Strict Email & Username Check
+  const existingEmail = db.prepare('SELECT id, name FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)').get(cleanEmail, cleanUsername);
+  if (existingEmail) {
+    return res.status(400).json({ error: `Email or username is already in use by user (${existingEmail.name}).` });
   }
 
   const passwordHash = bcrypt.hashSync(password, 10);
 
   const stmt = db.prepare(`
     INSERT INTO users (
-      company_id, role, name, email, mobile, username, password_hash, profile_photo, status
-    ) VALUES (?, 'TECHNICIAN', ?, ?, ?, ?, ?, ?, ?)
+      company_id, role, name, email, mobile, username, password_hash, profile_photo, working_area, status
+    ) VALUES (?, 'TECHNICIAN', ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const info = stmt.run(
     companyId,
-    name,
-    email,
-    mobile || null,
-    username || email,
+    name.trim(),
+    cleanEmail,
+    cleanMobile,
+    cleanUsername,
     passwordHash,
     profile_photo || null,
+    working_area ? (Array.isArray(working_area) ? working_area.join(', ') : working_area) : 'Colombo',
     status
   );
 
-  const newTech = db.prepare('SELECT id, company_id, role, name, email, mobile, username, status, profile_photo, created_at FROM users WHERE id = ?').get(info.lastInsertRowid);
+  const newTech = db.prepare('SELECT id, company_id, role, name, email, mobile, username, status, profile_photo, working_area, created_at FROM users WHERE id = ?').get(info.lastInsertRowid);
   const updatedBilling = getCompanyBilling(companyId);
   const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(companyId);
 
   // Send onboarding PWA link via SMS / WhatsApp if requested and mobile number is present
   let pwaSendResult = null;
-  if (send_pwa_link && mobile) {
+  if (send_pwa_link && cleanMobile) {
     const pwaUrl = app_url || `${req.protocol}://${req.get('host')}/technician/pwa`;
     const message = renderTemplate('TECHNICIAN_WELCOME_PWA', {
       technician_name: newTech.name,
@@ -1079,7 +1180,7 @@ router.post('/technicians', async (req, res) => {
     if (notification_channel === 'SMS' || notification_channel === 'BOTH') {
       smsRes = await sendSms({
         company_id: companyId,
-        phone: mobile,
+        phone: cleanMobile,
         message,
         message_type: 'TECHNICIAN_PWA_LINK',
         sent_by_user_id: req.user.id,
@@ -1090,7 +1191,7 @@ router.post('/technicians', async (req, res) => {
     if (notification_channel === 'WHATSAPP' || notification_channel === 'BOTH') {
       waRes = await sendWhatsApp({
         company_id: companyId,
-        phone: mobile,
+        phone: cleanMobile,
         message,
         message_type: 'TECHNICIAN_PWA_LINK',
         sent_by_user_id: req.user.id,
@@ -1103,6 +1204,99 @@ router.post('/technicians', async (req, res) => {
 
   logAudit({
     company_id: companyId,
+    user_id: req.user.id,
+    user_name: req.user.name,
+    user_role: req.user.role,
+    action: 'TECHNICIAN_CREATED',
+    details: {
+      technician_id: newTech.id,
+      name: newTech.name,
+      working_area: newTech.working_area,
+      status: newTech.status,
+      technician_price: updatedBilling.technician_price,
+      new_fee_amount: updatedBilling.total_fee_amount,
+      pwa_link_sent: Boolean(pwaSendResult)
+    },
+    ip_address: req.ip,
+    record_id: newTech.id
+  });
+
+  res.status(201).json({
+    technician: newTech,
+    billing: updatedBilling,
+    pwa_notification: pwaSendResult,
+    message: `Technician added successfully. One-time fee: Rs. ${updatedBilling.technician_price.toLocaleString()}`
+  });
+});
+
+// Update Technician Details
+router.put('/technicians/:id', (req, res) => {
+  const companyId = req.company_id;
+  const techId = req.params.id;
+  const { name, mobile, email, working_area, status, profile_photo, password } = req.body;
+
+  const existing = db.prepare("SELECT * FROM users WHERE id = ? AND company_id = ? AND role = 'TECHNICIAN'").get(techId, companyId);
+  if (!existing) {
+    return res.status(404).json({ error: 'Technician not found' });
+  }
+
+  // Validate unique mobile if modified
+  if (mobile && mobile.trim() !== existing.mobile) {
+    const cleanMobile = mobile.trim();
+    const phoneInUse = db.prepare('SELECT id, name FROM users WHERE (mobile = ? OR mobile = ?) AND id != ?').get(cleanMobile, cleanMobile.replace(/^\+94/, '0'), techId);
+    if (phoneInUse) {
+      return res.status(400).json({ error: `Mobile number "${cleanMobile}" is already in use by (${phoneInUse.name}).` });
+    }
+  }
+
+  // Validate unique email if modified
+  if (email && email.trim().toLowerCase() !== (existing.email || '').toLowerCase()) {
+    const cleanEmail = email.trim();
+    const emailInUse = db.prepare('SELECT id, name FROM users WHERE LOWER(email) = LOWER(?) AND id != ?').get(cleanEmail, techId);
+    if (emailInUse) {
+      return res.status(400).json({ error: `Email "${cleanEmail}" is already in use by (${emailInUse.name}).` });
+    }
+  }
+
+  let pwdHash = existing.password_hash;
+  if (password && password.trim().length >= 6) {
+    pwdHash = bcrypt.hashSync(password.trim(), 10);
+  }
+
+  const finalWorkingArea = working_area !== undefined
+    ? (Array.isArray(working_area) ? working_area.join(', ') : working_area)
+    : existing.working_area;
+
+  db.prepare(`
+    UPDATE users
+    SET name = COALESCE(?, name),
+        mobile = COALESCE(?, mobile),
+        email = COALESCE(?, email),
+        working_area = COALESCE(?, working_area),
+        status = COALESCE(?, status),
+        profile_photo = COALESCE(?, profile_photo),
+        password_hash = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND company_id = ?
+  `).run(
+    name !== undefined ? name.trim() : null,
+    mobile !== undefined ? mobile.trim() : null,
+    email !== undefined ? email.trim() : null,
+    finalWorkingArea,
+    status !== undefined ? status : null,
+    profile_photo !== undefined ? profile_photo : null,
+    pwdHash,
+    techId,
+    companyId
+  );
+
+  const updatedTech = db.prepare('SELECT id, company_id, role, name, email, mobile, username, status, profile_photo, working_area, created_at FROM users WHERE id = ?').get(techId);
+
+  res.json({
+    technician: updatedTech,
+    message: 'Technician updated successfully'
+  });
+});
     user_id: req.user.id,
     user_name: req.user.name,
     user_role: req.user.role,

@@ -13,7 +13,8 @@ import {
   Printer,
   Wrench,
   QrCode,
-  Share2
+  Share2,
+  Mail
 } from 'lucide-react';
 import InvoiceModal from '../../components/InvoiceModal';
 
@@ -50,6 +51,23 @@ export default function InvoicesList() {
     const itemsList = rawItems.map(i => `• ${i.description} (x${i.qty}): Rs. ${(i.unit_price * i.qty).toLocaleString()}`).join('%0A');
     const text = `*${inv.company_name || 'AC-Pro'} - Service Invoice #${inv.invoice_number}*%0A%0ADear ${inv.customer_name},%0AYour invoice details:%0A%0A${itemsList}%0A%0A*Total: Rs. ${Number(inv.total).toLocaleString()}*%0AAmount Paid: Rs. ${Number(inv.amount_paid || 0).toLocaleString()}%0AStatus: *${inv.status}*%0A%0AThank you! (Hotline: ${inv.company_phone || ''})`;
     window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+  };
+
+  const handleQuickSendEmail = async (inv) => {
+    const defaultEmail = inv.customer_email || '';
+    const email = window.prompt(`Send Invoice #${inv.invoice_number} to recipient email:`, defaultEmail);
+    if (!email || !email.includes('@')) {
+      if (email !== null) alert('Please enter a valid email address.');
+      return;
+    }
+    try {
+      const res = await axios.post(`/api/invoices/${inv.id}/send-email`, {
+        recipient_email: email.trim()
+      });
+      alert(res.data?.message || 'Invoice email sent successfully!');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to send invoice email');
+    }
   };
 
   const filtered = invoices.filter(inv => {
@@ -177,6 +195,14 @@ export default function InvoicesList() {
                   </td>
                   <td className="p-3.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => handleQuickSendEmail(inv)}
+                        title="Send Invoice via Email (Gmail/SMTP)"
+                        className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg border border-sky-200 transition-colors cursor-pointer"
+                      >
+                        <Mail className="w-4 h-4" />
+                      </button>
+
                       <button
                         onClick={() => handleShareWhatsApp(inv)}
                         title="Share Invoice via WhatsApp"

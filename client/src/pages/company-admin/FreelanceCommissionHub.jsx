@@ -2636,18 +2636,21 @@ export default function FreelanceCommissionHub() {
                 />
               </div>
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Phone / WhatsApp *</label>
+                <label className="font-bold text-slate-700 block mb-1">Phone / WhatsApp * <span className="text-[10px] text-amber-600 font-normal">(Unique Number)</span></label>
                 <input
                   required
+                  placeholder="0771234567"
                   value={techForm.phone}
                   onChange={e => setTechForm({ ...techForm, phone: e.target.value, whatsapp: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                 />
               </div>
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Email</label>
+                <label className="font-bold text-slate-700 block mb-1">Email * <span className="text-[10px] text-amber-600 font-normal">(Required)</span></label>
                 <input
                   type="email"
+                  required
+                  placeholder="technician@acpro.lk"
                   value={techForm.email}
                   onChange={e => setTechForm({ ...techForm, email: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl"
@@ -2686,12 +2689,30 @@ export default function FreelanceCommissionHub() {
                 />
               </div>
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Service Areas (comma separated)</label>
-                <input
-                  value={techForm.service_areas}
-                  onChange={e => setTechForm({ ...techForm, service_areas: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                />
+                <label className="font-bold text-slate-700 block mb-1">Service Areas (Sri Lanka Cities)</label>
+                <div className="space-y-1.5">
+                  <select
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      const current = (techForm.service_areas || '').split(',').map(s => s.trim()).filter(Boolean);
+                      if (!current.includes(e.target.value)) {
+                        setTechForm({ ...techForm, service_areas: [...current, e.target.value].join(', ') });
+                      }
+                    }}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded-xl bg-white text-xs"
+                  >
+                    <option value="">+ Add City to Coverage...</option>
+                    {['Colombo', 'Gampaha', 'Kalutara', 'Kandy', 'Galle', 'Matara', 'Kurunegala', 'Negombo', 'Dehiwala-Mount Lavinia', 'Moratuwa', 'Ja-Ela', 'Wattala', 'Ratnapura', 'Anuradhapura', 'Jaffna', 'Badulla', 'Trincomalee', 'Batticaloa'].map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="e.g. Colombo, Gampaha, Negombo"
+                    value={techForm.service_areas}
+                    onChange={e => setTechForm({ ...techForm, service_areas: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                  />
+                </div>
               </div>
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ID Verification Status</label>

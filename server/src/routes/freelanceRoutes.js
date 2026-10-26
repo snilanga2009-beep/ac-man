@@ -278,32 +278,59 @@ router.post('/technicians', requireCompanyAdmin, (req, res) => {
       existing_user_id = null
     } = req.body;
 
-    if (!full_name || !phone) {
-      return res.status(400).json({ error: 'Full name and phone number are required.' });
+    if (!full_name || !full_name.trim()) {
+      return res.status(400).json({ error: 'Full name is required.' });
+    }
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({ error: 'Mobile phone number is strictly required.' });
+    }
+
+    const cleanPhone = phone.trim();
+    const cleanEmail = (email && email.trim()) || `freelance_${Date.now()}_${Math.floor(Math.random() * 1000)}@acpro.lk`;
+
+    // Strict Phone Uniqueness Check across all users & freelance technicians
+    const phoneInUsers = db.prepare('SELECT id, name FROM users WHERE (mobile = ? OR mobile = ?) AND id != ?').get(cleanPhone, cleanPhone.replace(/^\+94/, '0'), existing_user_id || 0);
+    if (phoneInUsers) {
+      return res.status(400).json({ error: `Phone number "${cleanPhone}" is already registered to user/technician (${phoneInUsers.name}). Duplicate numbers are not allowed.` });
+    }
+
+    const phoneInFt = db.prepare('SELECT id, full_name FROM freelance_technicians WHERE (phone = ? OR phone = ?) AND user_id != ?').get(cleanPhone, cleanPhone.replace(/^\+94/, '0'), existing_user_id || 0);
+    if (phoneInFt) {
+      return res.status(400).json({ error: `Phone number "${cleanPhone}" is already assigned to freelance technician (${phoneInFt.full_name}).` });
+    }
+
+    if (email && email.trim()) {
+      const emailInUsers = db.prepare('SELECT id, name FROM users WHERE LOWER(email) = LOWER(?) AND id != ?').get(cleanEmail, existing_user_id || 0);
+      if (emailInUsers) {
+        return res.status(400).json({ error: `Email "${cleanEmail}" is already registered to user (${emailInUsers.name}).` });
+      }
     }
 
     const tx = db.transaction(() => {
       let userId = existing_user_id ? Number(existing_user_id) : null;
 
+      const workingAreaVal = Array.isArray(service_areas) && service_areas.length > 0
+        ? service_areas.join(', ')
+        : (city || 'Colombo');
+
       if (userId) {
         const u = db.prepare('SELECT * FROM users WHERE id = ? AND company_id = ?').get(userId, companyId);
         if (!u) throw new Error('Specified user does not belong to this company.');
-        db.prepare('UPDATE users SET is_freelance = 1, name = ?, mobile = ? WHERE id = ?').run(full_name, phone, userId);
+        db.prepare('UPDATE users SET is_freelance = 1, name = ?, mobile = ?, working_area = ? WHERE id = ?').run(full_name.trim(), cleanPhone, workingAreaVal, userId);
       } else {
-        const cleanEmail = (email && email.trim()) || `freelance_${Date.now()}_${Math.floor(Math.random() * 1000)}@acpro.lk`;
         const cleanUsername = (username && username.trim()) || `ft_${full_name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10)}_${Date.now().toString().slice(-4)}`;
         const existingUser = db.prepare('SELECT * FROM users WHERE company_id = ? AND (email = ? OR username = ?)').get(companyId, cleanEmail, cleanUsername);
 
         if (existingUser) {
           userId = existingUser.id;
-          db.prepare('UPDATE users SET is_freelance = 1 WHERE id = ?').run(userId);
+          db.prepare('UPDATE users SET is_freelance = 1, working_area = ? WHERE id = ?').run(workingAreaVal, userId);
         } else {
           const pwdHash = bcrypt.hashSync(password || 'freelance123', 10);
           const userAccountStatus = status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
           const uRes = db.prepare(`
-            INSERT INTO users (company_id, role, name, email, mobile, username, password_hash, profile_photo, status, is_freelance)
-            VALUES (?, 'TECHNICIAN', ?, ?, ?, ?, ?, ?, ?, 1)
-          `).run(companyId, full_name.trim(), cleanEmail, phone.trim(), cleanUsername, pwdHash, profile_photo, userAccountStatus);
+            INSERT INTO users (company_id, role, name, email, mobile, username, password_hash, profile_photo, working_area, status, is_freelance)
+            VALUES (?, 'TECHNICIAN', ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          `).run(companyId, full_name.trim(), cleanEmail, cleanPhone, cleanUsername, pwdHash, profile_photo, workingAreaVal, userAccountStatus);
           userId = uRes.lastInsertRowid;
         }
       }
@@ -454,6 +481,19 @@ router.put('/technicians/:id', requireTechnician, (req, res) => {
       notes = isTechOnly(req) ? existing.notes : (req.body.notes ?? existing.notes)
     } = req.body;
 
+    // Check phone uniqueness on update
+    if (phone && phone.trim() !== existing.phone) {
+      const cleanPhone = phone.trim();
+      const phoneInUsers = db.prepare('SELECT id, name FROM users WHERE (mobile = ? OR mobile = ?) AND id != ?').get(cleanPhone, cleanPhone.replace(/^\+94/, '0'), existing.user_id);
+      if (phoneInUsers) {
+        return res.status(400).json({ error: `Phone number "${cleanPhone}" is already registered to user (${phoneInUsers.name}).` });
+      }
+      const phoneInFt = db.prepare('SELECT id, full_name FROM freelance_technicians WHERE (phone = ? OR phone = ?) AND id != ?').get(cleanPhone, cleanPhone.replace(/^\+94/, '0'), ftId);
+      if (phoneInFt) {
+        return res.status(400).json({ error: `Phone number "${cleanPhone}" is already assigned to freelance technician (${phoneInFt.full_name}).` });
+      }
+    }
+
     const skillsJson = skills !== undefined
       ? JSON.stringify(Array.isArray(skills) ? skills : String(skills).split(',').map(s => s.trim()).filter(Boolean))
       : existing.skills;
@@ -464,10 +504,14 @@ router.put('/technicians/:id', requireTechnician, (req, res) => {
       ? JSON.stringify(Array.isArray(service_areas) ? service_areas : String(service_areas).split(',').map(s => s.trim()).filter(Boolean))
       : existing.service_areas;
 
+    const workingAreaVal = service_areas !== undefined
+      ? (Array.isArray(service_areas) ? service_areas.join(', ') : String(service_areas))
+      : (city || 'Colombo');
+
     db.prepare(`
       UPDATE freelance_technicians
       SET full_name = ?, profile_photo = ?, phone = ?, whatsapp = ?, email = ?,
-          address = ?, city = ?, skills = ?, service_categories = ?, service_areas = ?,
+          address = ?, city = ?, skills = ?, service_categories = ?, service_areas = ?, working_area = ?,
           id_number = ?, id_verification_status = ?,
           bank_name = ?, bank_branch = ?, bank_account_name = ?, bank_account_number = ?,
           payment_method_preference = ?, agreement_status = ?,
@@ -476,7 +520,7 @@ router.put('/technicians/:id', requireTechnician, (req, res) => {
       WHERE id = ? AND company_id = ?
     `).run(
       full_name, profile_photo, phone, whatsapp, email,
-      address, city, skillsJson, catsJson, areasJson,
+      address, city, skillsJson, catsJson, areasJson, workingAreaVal,
       id_number, id_verification_status,
       bank_name, bank_branch, bank_account_name, bank_account_number,
       payment_method_preference, agreement_status, agreement_status,
@@ -484,10 +528,10 @@ router.put('/technicians/:id', requireTechnician, (req, res) => {
       ftId, companyId
     );
 
-    // Sync user status if suspended or active
+    // Sync user status & working area
     if (!isTechOnly(req)) {
       const userStatus = status === 'SUSPENDED' || status === 'INACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-      db.prepare('UPDATE users SET name = ?, mobile = ?, status = ? WHERE id = ? AND company_id = ?').run(full_name, phone, userStatus, existing.user_id, companyId);
+      db.prepare('UPDATE users SET name = ?, mobile = ?, status = ?, working_area = ? WHERE id = ? AND company_id = ?').run(full_name, phone, userStatus, workingAreaVal, existing.user_id, companyId);
     }
 
     logAudit({

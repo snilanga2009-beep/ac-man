@@ -719,6 +719,24 @@ function initDatabase() {
   try { db.exec("ALTER TABLE companies ADD COLUMN cloudinary_upload_preset TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE companies ADD COLUMN cloudinary_folder TEXT DEFAULT 'ac-pro/service-jobs'"); } catch (e) {}
 
+  // Ensure Working Area for technicians (Company & Freelance)
+  try { db.exec("ALTER TABLE users ADD COLUMN working_area TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE freelance_technicians ADD COLUMN working_area TEXT"); } catch (e) {}
+
+  // Ensure Email / SMTP Gateway settings for companies (Gmail, Custom Domain SMTP)
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_enabled INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_host TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_port INTEGER DEFAULT 587"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_secure TEXT DEFAULT 'TLS'"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_user TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_pass TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_from_email TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE companies ADD COLUMN smtp_from_name TEXT"); } catch (e) {}
+
+  // Ensure Communication logs email columns
+  try { db.exec("ALTER TABLE communication_logs ADD COLUMN recipient_email TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE communication_logs ADD COLUMN subject TEXT"); } catch (e) {}
+
   // Initialize subscription dates for existing companies if empty
   try {
     const today = new Date();

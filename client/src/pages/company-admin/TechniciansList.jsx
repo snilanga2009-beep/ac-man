@@ -164,6 +164,7 @@ export default function TechniciansList() {
               <tr>
                 <th className="p-3.5">Technician</th>
                 <th className="p-3.5">Contact Details</th>
+                <th className="p-3.5">Working Area (SL)</th>
                 <th className="p-3.5">Login ID</th>
                 <th className="p-3.5">Status</th>
                 <th className="p-3.5">PWA Access / SMS / WhatsApp</th>
@@ -185,13 +186,18 @@ export default function TechniciansList() {
                   </td>
                   <td className="p-3.5">
                     <div className="space-y-0.5">
-                      <p className="text-slate-700 flex items-center gap-1.5">
+                      <p className="text-slate-700 flex items-center gap-1.5 font-mono">
                         <Phone className="w-3 h-3 text-slate-400" /> {tech.mobile || '-'}
                       </p>
                       <p className="text-slate-500 text-[11px] flex items-center gap-1.5">
                         <Mail className="w-3 h-3 text-slate-400" /> {tech.email}
                       </p>
                     </div>
+                  </td>
+                  <td className="p-3.5">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-800 text-[11px] font-bold border border-sky-200">
+                      📍 {tech.working_area || 'Colombo'}
+                    </span>
                   </td>
                   <td className="p-3.5 font-mono text-slate-600 font-semibold">{tech.username}</td>
                   <td className="p-3.5">

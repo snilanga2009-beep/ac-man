@@ -11,12 +11,15 @@ import {
   ShieldCheck,
   TrendingUp,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  KeyRound
 } from 'lucide-react';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 export default function SuperAdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   useEffect(() => {
     axios.get('/api/super-admin/dashboard')
@@ -53,7 +56,13 @@ export default function SuperAdminDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4 text-purple-300" /> Change Password
+          </button>
           <Link
             to="/super-admin/companies"
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-purple-600/30 transition-all flex items-center gap-1.5"
@@ -217,6 +226,12 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+      />
     </div>
   );
 }

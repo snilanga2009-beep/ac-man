@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { FileText, Plus, Trash2, Smartphone, MessageSquare, Send, CheckCircle2, DollarSign, X, Printer } from 'lucide-react';
+import { FileText, Plus, Trash2, Smartphone, MessageSquare, Send, CheckCircle2, DollarSign, X, Printer, Mail } from 'lucide-react';
 
 export default function InvoiceModal({ isOpen, onClose, customerId, customers = [], serviceJobId = null, existingInvoice = null, onSuccess }) {
   const [selectedCustomerId, setSelectedCustomerId] = useState(customerId || (customers[0]?.id || ''));
@@ -19,6 +19,9 @@ export default function InvoiceModal({ isOpen, onClose, customerId, customers = 
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [loading, setLoading] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState(existingInvoice?.customer_email || '');
+  const [showEmailBox, setShowEmailBox] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
 
   if (!isOpen) return null;
 
@@ -114,6 +117,26 @@ export default function InvoiceModal({ isOpen, onClose, customerId, customers = 
     } catch (err) {
       setLoading(false);
       alert('Failed to dispatch invoice');
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!existingInvoice?.id) return;
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      alert('Please provide a valid recipient email address.');
+      return;
+    }
+    setEmailSending(true);
+    try {
+      const res = await axios.post(`/api/invoices/${existingInvoice.id}/send-email`, {
+        recipient_email: recipientEmail
+      });
+      setEmailSending(false);
+      setDispatchStatus(res.data?.message || 'Invoice sent via Email successfully!');
+      setShowEmailBox(false);
+    } catch (err) {
+      setEmailSending(false);
+      alert(err.response?.data?.error || 'Failed to send invoice email');
     }
   };
 
@@ -294,6 +317,45 @@ export default function InvoiceModal({ isOpen, onClose, customerId, customers = 
               </div>
             </div>
           )}
+
+          {/* Email Invoice Dispatch Section */}
+          {existingInvoice && (
+            <div className="bg-sky-50/70 p-4 rounded-xl border border-sky-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
+                  <Mail className="w-4 h-4 text-sky-600" /> Dispatch Branded Invoice via Email
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailBox(!showEmailBox)}
+                  className="text-[11px] font-bold text-sky-700 hover:text-sky-900 underline cursor-pointer"
+                >
+                  {showEmailBox ? 'Hide' : 'Configure Email'}
+                </button>
+              </div>
+
+              {(showEmailBox || !existingInvoice.customer_email) && (
+                <div className="flex items-center gap-2 pt-1 animate-in fade-in">
+                  <input
+                    type="email"
+                    placeholder="Recipient email (e.g. client@example.com)"
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    className="flex-1 px-3 py-2 text-xs bg-white border border-sky-300 rounded-xl outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    disabled={emailSending || !recipientEmail}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>{emailSending ? 'Sending Email...' : 'Send Invoice Email'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer Buttons with SMS / WhatsApp Actions */}
@@ -343,6 +405,14 @@ export default function InvoiceModal({ isOpen, onClose, customerId, customers = 
               </>
             ) : (
               <>
+                <button
+                  type="button"
+                  onClick={handleSendEmail}
+                  disabled={emailSending}
+                  className="px-3 py-2 text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Mail className="w-3.5 h-3.5" /> {emailSending ? 'Sending...' : 'Send Email'}
+                </button>
                 <button
                   onClick={() => handleSendExisting('SMS')}
                   className="px-3 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-xl flex items-center gap-1.5"
