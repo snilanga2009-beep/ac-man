@@ -1297,29 +1297,6 @@ router.put('/technicians/:id', (req, res) => {
     message: 'Technician updated successfully'
   });
 });
-    user_id: req.user.id,
-    user_name: req.user.name,
-    user_role: req.user.role,
-    action: 'TECHNICIAN_CREATED',
-    details: {
-      technician_id: newTech.id,
-      name: newTech.name,
-      status: newTech.status,
-      technician_price: updatedBilling.technician_price,
-      new_fee_amount: updatedBilling.total_fee_amount,
-      pwa_link_sent: Boolean(pwaSendResult)
-    },
-    ip_address: req.ip,
-    record_id: newTech.id
-  });
-
-  res.status(201).json({
-    technician: newTech,
-    billing: updatedBilling,
-    pwa_notification: pwaSendResult,
-    message: `Technician added successfully. One-time fee: Rs. ${updatedBilling.technician_price.toLocaleString()}`
-  });
-});
 
 // 4.1 Send PWA App Link to existing technician
 router.post('/technicians/:id/send-pwa-link', async (req, res) => {
