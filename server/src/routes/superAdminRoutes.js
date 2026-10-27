@@ -268,20 +268,48 @@ router.delete('/companies/:id', (req, res) => {
   try {
     const deleteTx = db.transaction(() => {
       // Cascaded deletion of all records associated with this company
-      db.prepare('DELETE FROM communication_logs WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM service_reminders WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM service_packages WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM payments WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM invoices WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM quotations WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM service_jobs WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM ac_units WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM customers WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM freelance_technicians WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM technician_earnings_ledger WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM technician_payouts WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM company_subscriptions WHERE company_id = ?').run(companyId);
-      db.prepare('DELETE FROM users WHERE company_id = ?').run(companyId);
+      // Dependent child tables are deleted first to satisfy any foreign keys
+      const tablesToDelete = [
+        'quotation_items',
+        'quotation_versions',
+        'quotation_approvals',
+        'quotation_reminders',
+        'quotation_notifications',
+        'quotations',
+        'technician_payout_items',
+        'technician_payouts',
+        'freelance_payout_requests',
+        'technician_earnings_ledger',
+        'freelance_job_assignments',
+        'freelance_job_offers',
+        'freelance_rate_history',
+        'freelance_rate_cards',
+        'freelance_technicians',
+        'communication_logs',
+        'service_reminders',
+        'service_packages',
+        'payments',
+        'invoices',
+        'service_jobs',
+        'ac_units',
+        'customers',
+        'platform_billing_records',
+        'auth_otp_codes',
+        'users'
+      ];
+
+      for (const table of tablesToDelete) {
+        try {
+          const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(table);
+          if (tableExists) {
+            db.prepare(`DELETE FROM ${table} WHERE company_id = ?`).run(companyId);
+          }
+        } catch (tableErr) {
+          console.warn(`[DELETE_COMPANY] Warning deleting from ${table}:`, tableErr.message);
+        }
+      }
+
+      // Finally delete the company itself
       db.prepare('DELETE FROM companies WHERE id = ?').run(companyId);
     });
 
@@ -298,7 +326,7 @@ router.delete('/companies/:id', (req, res) => {
       record_id: companyId
     });
 
-    res.json({ success: true, message: `Company "${company.name}" and all associated data have been deleted.` });
+    res.json({ success: true, message: `Company "${company.name}" and all associated data have been permanently deleted.` });
   } catch (err) {
     console.error('Error deleting company:', err);
     res.status(500).json({ error: 'Failed to delete company: ' + err.message });
