@@ -73,25 +73,35 @@ router.get('/dashboard', (req, res) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const getSlot = (dueDateStr) => {
+  const getSlot = (dueDateStr, intervalMonths = null) => {
     if (!dueDateStr) return 'due_30d';
     const due = new Date(dueDateStr);
     const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 30) return 'due_30d'; // Next 30 days / Overdue
-    if (diffDays <= 90) return 'due_3m';  // 3 Months (31 - 90d)
-    if (diffDays <= 180) return 'due_6m'; // 6 Months (91 - 180d)
-    return 'due_12m'; // 12 Months (181 - 365d+)
+    
+    // Immediate Attention: overdue or due within next 30 days
+    if (diffDays <= 30) return 'due_30d';
+
+    const interval = parseInt(intervalMonths, 10);
+    // Explicit interval checks for 3, 6, 12 months when not yet due within 30 days
+    if (interval === 3 && diffDays <= 120) return 'due_3m';
+    if (interval === 6 && diffDays > 105 && diffDays <= 240) return 'due_6m';
+    if (interval === 12 && diffDays > 210) return 'due_12m';
+
+    // Standard time categorization (accommodates calendar month variations: 3m=89-93d, 6m=181-184d)
+    if (diffDays <= 105) return 'due_3m';  // 3 Months Slot (~31 - 105 Days)
+    if (diffDays <= 210) return 'due_6m';  // 6 Months Slot (~106 - 210 Days)
+    return 'due_12m'; // 12 Months Slot (211 - 365+ Days)
   };
 
   const scheduleSlots = {
     due_30d: { count: 0, label: 'Immediate / Next 30 Days', color: 'rose', items: [] },
-    due_3m: { count: 0, label: '3 Months Schedule (90 Days)', color: 'sky', items: [] },
-    due_6m: { count: 0, label: '6 Months Schedule (180 Days)', color: 'indigo', items: [] },
-    due_12m: { count: 0, label: '12 Months Schedule (1 Year)', color: 'emerald', items: [] }
+    due_3m: { count: 0, label: '3 Months Schedule (Quarterly)', color: 'sky', items: [] },
+    due_6m: { count: 0, label: '6 Months Schedule (Mid-Year)', color: 'indigo', items: [] },
+    due_12m: { count: 0, label: '12 Months Schedule (Annual)', color: 'emerald', items: [] }
   };
 
   upcomingUnits.forEach(item => {
-    const slotKey = getSlot(item.next_service_date || item.scheduled_date);
+    const slotKey = getSlot(item.next_service_date || item.scheduled_date, item.service_interval_months);
     if (scheduleSlots[slotKey]) {
       scheduleSlots[slotKey].count++;
       scheduleSlots[slotKey].items.push({ ...item, slot: slotKey });

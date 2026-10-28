@@ -41,6 +41,29 @@ import AddTechnicianModal from '../../components/AddTechnicianModal';
 import AssignTechnicianModal from '../../components/AssignTechnicianModal';
 import JobFullDetailModal from '../../components/JobFullDetailModal';
 
+// Schedule slot categorization helper matching server logic
+export const getScheduleSlotKey = (dueDateStr, intervalMonths = null) => {
+  if (!dueDateStr) return 'due_30d';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr);
+  const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+  
+  // Immediate Attention: overdue or due within next 30 days
+  if (diffDays <= 30) return 'due_30d';
+
+  const interval = parseInt(intervalMonths, 10);
+  // Explicit interval checks for 3, 6, 12 months when not yet due within 30 days
+  if (interval === 3 && diffDays <= 120) return 'due_3m';
+  if (interval === 6 && diffDays > 105 && diffDays <= 240) return 'due_6m';
+  if (interval === 12 && diffDays > 210) return 'due_12m';
+
+  // Standard time categorization (accommodates calendar variations: 3m=89-93d, 6m=181-184d)
+  if (diffDays <= 105) return 'due_3m';  // 3 Months Slot (~31 - 105 Days)
+  if (diffDays <= 210) return 'due_6m';  // 6 Months Slot (~106 - 210 Days)
+  return 'due_12m'; // 12 Months Slot (211 - 365+ Days)
+};
+
 export default function CompanyDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -333,9 +356,9 @@ export default function CompanyDashboard() {
   };
   const scheduleSlots = data?.scheduleSlots || {
     due_30d: { count: 0, label: 'Immediate / Next 30 Days', color: 'rose', items: [] },
-    due_3m: { count: 0, label: '3 Months Schedule (90 Days)', color: 'sky', items: [] },
-    due_6m: { count: 0, label: '6 Months Schedule (180 Days)', color: 'indigo', items: [] },
-    due_12m: { count: 0, label: '12 Months Schedule (1 Year)', color: 'emerald', items: [] }
+    due_3m: { count: 0, label: '3 Months Schedule (Quarterly)', color: 'sky', items: [] },
+    due_6m: { count: 0, label: '6 Months Schedule (Mid-Year)', color: 'indigo', items: [] },
+    due_12m: { count: 0, label: '12 Months Schedule (Annual)', color: 'emerald', items: [] }
   };
   const technicians = data?.technicians || [];
   const upcomingUnits = data?.upcomingUnits || [];
@@ -343,17 +366,7 @@ export default function CompanyDashboard() {
   // Filter units according to selected slot tab and search query
   const filteredUnits = upcomingUnits.filter(unit => {
     if (activeSlotFilter !== 'ALL') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dueStr = unit.next_service_date || unit.scheduled_date;
-      let slot = 'due_30d';
-      if (dueStr) {
-        const diffDays = Math.ceil((new Date(dueStr) - today) / (1000 * 60 * 60 * 24));
-        if (diffDays <= 30) slot = 'due_30d';
-        else if (diffDays <= 90) slot = 'due_3m';
-        else if (diffDays <= 180) slot = 'due_6m';
-        else slot = 'due_12m';
-      }
+      const slot = getScheduleSlotKey(unit.next_service_date || unit.scheduled_date, unit.service_interval_months);
       if (slot !== activeSlotFilter) return false;
     }
 
@@ -1771,7 +1784,7 @@ export default function CompanyDashboard() {
                   {scheduleSlots.due_3m?.count || 0} <span className="text-xs font-semibold">AC Units</span>
                 </h3>
                 <p className={`text-xs mt-1 font-semibold ${activeSlotFilter === 'due_3m' ? 'text-blue-100' : 'text-blue-700'}`}>
-                  Due in 31 - 90 Days
+                  Due in 1 - 3 Months (~31 - 105 Days)
                 </p>
               </div>
               <div className={`p-3 rounded-2xl ${activeSlotFilter === 'due_3m' ? 'bg-white/20 text-white' : 'bg-blue-200 text-blue-700'}`}>
@@ -1804,7 +1817,7 @@ export default function CompanyDashboard() {
                   {scheduleSlots.due_6m?.count || 0} <span className="text-xs font-semibold">AC Units</span>
                 </h3>
                 <p className={`text-xs mt-1 font-semibold ${activeSlotFilter === 'due_6m' ? 'text-purple-100' : 'text-[#423A8E]'}`}>
-                  Due in 91 - 180 Days
+                  Due in 4 - 6 Months (~106 - 210 Days)
                 </p>
               </div>
               <div className={`p-3 rounded-2xl ${activeSlotFilter === 'due_6m' ? 'bg-white/20 text-white' : 'bg-[#423A8E]/20 text-[#423A8E]'}`}>
@@ -1837,7 +1850,7 @@ export default function CompanyDashboard() {
                   {scheduleSlots.due_12m?.count || 0} <span className="text-xs font-semibold">AC Units</span>
                 </h3>
                 <p className={`text-xs mt-1 font-semibold ${activeSlotFilter === 'due_12m' ? 'text-emerald-100' : 'text-emerald-700'}`}>
-                  Due in 181 - 365 Days
+                  Due in 7 - 12 Months (211 - 365+ Days)
                 </p>
               </div>
               <div className={`p-3 rounded-2xl ${activeSlotFilter === 'due_12m' ? 'bg-white/20 text-white' : 'bg-emerald-200 text-emerald-700'}`}>
@@ -1929,16 +1942,8 @@ export default function CompanyDashboard() {
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
                   const dueStr = unit.next_service_date || unit.scheduled_date;
-                  let diffDays = null;
-                  let slotKey = 'due_30d';
-
-                  if (dueStr) {
-                    diffDays = Math.ceil((new Date(dueStr) - today) / (1000 * 60 * 60 * 24));
-                    if (diffDays <= 30) slotKey = 'due_30d';
-                    else if (diffDays <= 90) slotKey = 'due_3m';
-                    else if (diffDays <= 180) slotKey = 'due_6m';
-                    else slotKey = 'due_12m';
-                  }
+                  const diffDays = dueStr ? Math.ceil((new Date(dueStr) - today) / (1000 * 60 * 60 * 24)) : null;
+                  const slotKey = getScheduleSlotKey(dueStr, unit.service_interval_months);
 
                   const slotBadge = {
                     due_30d: { label: '🔴 30-Day Slot', bg: 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-400/20' },
